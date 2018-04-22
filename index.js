@@ -1,32 +1,32 @@
 /**
- * Version: 0.1.3
+ * Version: 0.1.4
  * Made by Loggeru
+ * update by xiau
  */
 
-const LAIN_ID = 80081,                          // Lein's Dark Root Beer ID
-    DELAY = 200,                                // How much time in miliseconds should wait after buff (seconds * 1000)
-    NOTIFICATIONS = true;                       // true - Activates notification when you drink / false - Deactivates
+// Lein's Dark Root Beer ID
+const lainId = 80081;
+// How much time in miliseconds should wait after buff (seconds * 1000)
+const delay = 200;
+// true - Activates notification when you drink / false - Deactivates
+const notifications = true;
 
 /**
  * DON'T CHANGE ANYTHING BELOW THIS LINE
  */
 
-const skills = require('./skills'),
-    Command = require('command');
+const skills = require('./skills');
+const Command = require('command');
 
 module.exports = function LetMeDrink(dispatch) {
     const command = Command(dispatch);
 
     let enabled = true,
-        oCid = null,
-        oJob = null,
-        oX = null,
-        oY = null,
-        oZ = null,
-        oW = null,
-        qtdDrink = 0,
-        idDrink = null,
-        isCdDrink = false,
+        gameId = null,
+        job = null,
+        curLocation = null,
+        itemAmount = null,
+        imDrunk = false,
         getInfoCommand = false;
 
     command.add('letmedrink', () => {
@@ -40,50 +40,56 @@ module.exports = function LetMeDrink(dispatch) {
         message('Use the desired skill and check proxy console.', true);
     });
 
-    dispatch.hook('S_LOGIN', 2, (event) => {
-        oCid = event.cid;
-        oJob = (event.model - 10101) % 100;
+    dispatch.hook('S_LOGIN', 10, (event) => {
+        ({
+            gameId,
+        } = event);
+        job = (event.templateId - 10101) % 100;
     });
 
-    dispatch.hook('C_PLAYER_LOCATION', 1, { order: -10 }, (event) => {
-        oX = (event.x1 + event.x2) / 2;
-        oY = (event.y1 + event.y2) / 2;
-        oZ = (event.z1 + event.z2) / 2;
-        oW = event.w;
+    dispatch.hook('C_PLAYER_LOCATION', 3, {
+        order: -10
+    }, (event) => {
+        curLocation = event
     });
 
-    dispatch.hook('S_INVEN', 5, { order: -10 }, (event) => {
-        if (!enabled) return;
-
-        let tempInv = event.items;
-        for (i = 0; i < tempInv.length; i++) {
-            if (tempInv[i].item == LAIN_ID) {
-                qtdDrink = tempInv[i].amount;
-                idDrink = tempInv[i].uid.low;
+    dispatch.hook('S_INVEN', 12, {
+        order: -10
+    }, (event) => {
+        if (!enabled) {
+            return;
+        }
+        let invenList = event.items;
+        for (i = 0; i < invenList.length; i++) {
+            if (invenList[i].id == lainId) {
+                itemAmount = invenList[i].amount;
                 break;
             }
         }
     });
 
-    dispatch.hook('S_START_COOLTIME_ITEM', 1, event => {
-        if (event.item == LAIN_ID && isCdDrink == false) {
-            isCdDrink = true;
-            setTimeout(function () { isCdDrink = false; }, event.cooldown * 1000);
+    dispatch.hook('S_START_COOLTIME_ITEM', 1, (event) => {
+        if (event.item == lainId && imDrunk == false) {
+            imDrunk = true;
+            setTimeout(() => {
+                imDrunk = false;
+            }, event.cooldown * 1000);
         }
     });
 
-    dispatch.hook('C_START_SKILL', 3, { order: -10 }, (event) => {
-        if (!enabled) return;
-
+    dispatch.hook('C_START_SKILL', 5, {
+        order: -10
+    }, (event) => {
+        if (!enabled) {
+            return;
+        }
         let sInfo = getSkillInfo(event.skill);
-
         if (getInfoCommand) {
-            message('Skill info: (group: ' + sInfo.group + ' / job: ' + oJob + ')');
+            message('Skill info: (group: ' + sInfo.group + ' / job: ' + job + ')');
             getInfoCommand = false;
         }
-
         for (s = 0; s < skills.length; s++) {
-            if (skills[s].group == sInfo.group && skills[s].job == oJob && isCdDrink == false && qtdDrink > 0) {
+            if (skills[s].group == sInfo.group && skills[s].job == job && imDrunk == false && itemAmount > 0) {
                 useItem();
                 break;
             }
@@ -91,32 +97,42 @@ module.exports = function LetMeDrink(dispatch) {
     });
 
     function useItem() {
-        setTimeout(function () {
-            dispatch.toServer('C_USE_ITEM', 1, {
-                ownerId: oCid,
-                item: LAIN_ID,
-                id: idDrink,
+        setTimeout(() => {
+            dispatch.toServer('C_USE_ITEM', 3, {
+                gameId: gameId,
+                id: lainId,
+                dbid: {
+                    low: 0,
+                    high: 0,
+                    unsigned: true
+                },
+                target: {
+                    low: 0,
+                    high: 0,
+                    unsigned: true
+                },
+                amount: 1,
+                dest: {
+                    x: 0,
+                    y: 0,
+                    z: 0
+                },
+                loc: curLocation.loc,
+                w: curLocation.w,
                 unk1: 0,
                 unk2: 0,
                 unk3: 0,
-                unk4: 1,
-                unk5: 0,
-                unk6: 0,
-                unk7: 0,
-                x: oX,
-                y: oY,
-                z: oZ,
-                w: oW,
-                unk8: 0,
-                unk9: 0,
-                unk10: 0,
-                unk11: 1
+                unk4: true
             });
-            isCdDrink = true;
-            qtdDrink--;
-            if (NOTIFICATIONS) message('You drank your beer, still have ' + qtdDrink + ' more.', true);
-            setTimeout(function () { isCdDrink = false; }, 60000);
-        }, DELAY);
+            imDrunk = true;
+            itemAmount--;
+            if (notifications) {
+                message('You drank your beer, still have ' + itemAmount + ' more.', true);
+            }
+            setTimeout(() => {
+                imDrunk = false;
+            }, 60000);
+        }, delay);
     }
 
     function getSkillInfo(id) {
